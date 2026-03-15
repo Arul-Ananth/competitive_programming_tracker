@@ -1,0 +1,56 @@
+name: CP Tracker
+
+on:
+  schedule:
+    - cron: "30 3 * * *"
+  workflow_dispatch:
+    inputs:
+      date:
+        description: "Specific date (YYYY-MM-DD). Do not combine with from/to."
+        required: false
+        type: string
+      from_date:
+        description: "Backfill start date (YYYY-MM-DD). Requires to_date."
+        required: false
+        type: string
+      to_date:
+        description: "Backfill end date (YYYY-MM-DD). Requires from_date."
+        required: false
+        type: string
+
+jobs:
+  run-tracker:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run tracker
+        env:
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          EMAIL_USER: ${{ secrets.EMAIL_USER }}
+          EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+          EMAIL_SMTP_HOST: ${{ secrets.EMAIL_SMTP_HOST }}
+          EMAIL_SMTP_PORT: ${{ secrets.EMAIL_SMTP_PORT }}
+          DATE_INPUT: ${{ github.event.inputs.date }}
+          FROM_DATE_INPUT: ${{ github.event.inputs.from_date }}
+          TO_DATE_INPUT: ${{ github.event.inputs.to_date }}
+        run: |
+          CMD_ARGS=()
+          if [ -n "$DATE_INPUT" ]; then
+            CMD_ARGS+=(--date "$DATE_INPUT")
+          fi
+          if [ -n "$FROM_DATE_INPUT" ]; then
+            CMD_ARGS+=(--from "$FROM_DATE_INPUT")
+          fi
+          if [ -n "$TO_DATE_INPUT" ]; then
+            CMD_ARGS+=(--to "$TO_DATE_INPUT")
+          fi
+          python src/main.py "${CMD_ARGS[@]}"
