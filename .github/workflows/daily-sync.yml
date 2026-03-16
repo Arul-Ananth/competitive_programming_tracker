@@ -21,6 +21,8 @@ on:
 jobs:
   run-tracker:
     runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
     steps:
       - uses: actions/checkout@v4
@@ -32,9 +34,20 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Run tracker
+      - name: Prepare Google credentials
         env:
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+        run: |
+          set -euo pipefail
+          if [ -z "${GOOGLE_SERVICE_ACCOUNT_JSON:-}" ]; then
+            echo "Missing required secret: GOOGLE_SERVICE_ACCOUNT_JSON" >&2
+            exit 1
+          fi
+          printf '%s' "$GOOGLE_SERVICE_ACCOUNT_JSON" > service_account.json
+
+      - name: Run tracker
+        env:
+          GOOGLE_SERVICE_ACCOUNT_FILE: service_account.json
           EMAIL_USER: ${{ secrets.EMAIL_USER }}
           EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
           EMAIL_SMTP_HOST: ${{ secrets.EMAIL_SMTP_HOST }}
