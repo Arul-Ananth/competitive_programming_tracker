@@ -3,4 +3,5 @@ beautifulsoup4==4.12.3
 gspread==6.1.2
 google-auth==2.37.0
 tzdata==2025.2
-
+jsonschema==4.23.0
+litellm==1.59.6

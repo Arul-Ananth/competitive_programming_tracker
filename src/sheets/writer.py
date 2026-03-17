@@ -10,6 +10,17 @@ class SheetWriteError(Exception):
     pass
 
 
+def _canonical_platform_key(value: str) -> str:
+    lowered = value.strip().lower()
+    if "leetcode" in lowered:
+        return "leetcode"
+    if "codeforces" in lowered:
+        return "codeforces"
+    if "atcoder" in lowered:
+        return "atcoder"
+    return lowered
+
+
 def _safe_cell(row: list[str], column_index: int) -> str:
     idx = column_index - 1
     if idx < 0 or idx >= len(row):
@@ -39,7 +50,7 @@ def read_existing_keys(
             continue
 
         if platform_col and title_col and date_col:
-            platform = _safe_cell(row, platform_col).lower()
+            platform = _canonical_platform_key(_safe_cell(row, platform_col))
             title = _safe_cell(row, title_col)
             solved_date = _safe_cell(row, date_col)
             username = platform_usernames.get(platform, "")
@@ -78,4 +89,3 @@ def append_entries(layout: SheetLayout, entries: Iterable[dict]) -> int:
         raise SheetWriteError("Failed to append rows to Google Sheet.") from exc
 
     return len(rows)
-

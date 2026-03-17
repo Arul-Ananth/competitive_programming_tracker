@@ -7,6 +7,8 @@ Automation tool that logs daily solved problems from LeetCode, Codeforces, and A
 - Runs daily via GitHub Actions (and supports manual run).
 - Supports override modes: single date and date-range backfill.
 - Appends only new rows (never edits or deletes existing rows).
+- Uses deterministic runtime rules from `rules/active_rules.json` for safe column/value mapping.
+- Supports one-time LLM rule compilation with LiteLLM (`--compile-rules`).
 - Prevents duplicates using:
   - Primary key: `link`
   - Fallback key: `SHA256(platform + title + date + username)`
@@ -45,6 +47,7 @@ Create these secrets:
 - `EMAIL_USER`
 - `EMAIL_PASSWORD`
 - Optional: `EMAIL_SMTP_HOST`, `EMAIL_SMTP_PORT`
+- Optional for rule compilation workflow: provider API key secret(s) such as `OPENAI_API_KEY`
 
 Important:
 
@@ -91,7 +94,7 @@ Optional logical columns:
 
 Supported aliases:
 
-- `title`: `Title`, `Problem`, `Question`
+- `title`: `Title`, `Problem`, `Question`, `Program Title`
 - `link`: `Link`, `URL`, `Problem Link`
 - `date`: `Date`, `Solved On`
 - `platform`: `Platform`, `Site`, `OJ`
@@ -106,11 +109,13 @@ Each run follows:
 3. Resolve run mode and target date(s)
 4. Fetch submissions for each target date
 5. Normalize data
-6. Generate duplicate keys
-7. Read existing keys
-8. Filter duplicates
-9. Append new rows
-10. Print summary
+6. Map values using `rules/active_rules.json`
+7. Validate mapped platform values against sheet dropdown options
+8. Generate duplicate keys
+9. Read existing keys
+10. Filter duplicates
+11. Append new rows
+12. Print summary
 
 For range backfill, dates are processed in chronological order, one date at a time.
 
@@ -145,6 +150,27 @@ Range backfill:
 python src/main.py --from 2026-03-01 --to 2026-03-07
 ```
 
+Compile draft rules (one-time/manual):
+
+```bash
+set LITELLM_MODEL=openai/gpt-4o-mini
+python src/main.py --compile-rules
+```
+
+Validate rules file:
+
+```bash
+python src/main.py --validate-rules
+```
+
+Promote draft to active:
+
+```bash
+python src/main.py --promote-rules
+```
+
+If runtime mapping fails for any row, that row is skipped and details are written to `logs/rule_drift_report.json`.
+
 ## GitHub Actions Manual Run
 
 Scheduled runs continue to use the current day in your configured timezone.
@@ -161,12 +187,25 @@ Validation rules:
 - `from_date` and `to_date` must be provided together.
 - Dates must be `YYYY-MM-DD`.
 
+## Rule Compilation Workflow
+
+Use the optional GitHub Actions workflow `Compile Rules` for manual LLM rule generation.
+
+- Trigger `Compile Rules` from Actions tab.
+- Provide `model` input (for example `openai/gpt-4o-mini`).
+- Ensure both `GOOGLE_SERVICE_ACCOUNT_JSON` and a provider API key secret (for example `OPENAI_API_KEY`) are set.
+- Download the `rules-draft` artifact and promote after review.
+
 ## Project Structure
 
 ```text
 cp-tracker/
   config.json
   requirements.txt
+  rules/
+    active_rules.json
+    rules.draft.json
+    rules.schema.json
   src/
     main.py
     sync.py
@@ -187,5 +226,6 @@ cp-tracker/
       notification.py
   .github/workflows/
     daily-sync.yml
+    compile-rules.yml
   README.md
 ```

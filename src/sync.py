@@ -11,8 +11,14 @@ from config_loader import Config
 from platforms.atcoder import fetch_solved_today as fetch_atcoder
 from platforms.codeforces import fetch_solved_today as fetch_codeforces
 from platforms.leetcode import fetch_solved_today as fetch_leetcode
+from rules.engine import (
+    load_rules,
+    map_platform_value,
+    write_drift_report,
+)
 from sheets.client import AuthenticationError, SheetAccessError, open_spreadsheet
 from sheets.detector import SheetDetectionError, detect_log_sheet
+from sheets.introspection import extract_allowed_values_for_column
 from sheets.validator import SheetValidationError, validate_layout
 from sheets.writer import SheetWriteError, append_entries, read_existing_keys
 from utils.dates import today_in_timezone
@@ -96,13 +102,36 @@ def run_sync(
         LOGGER.info("Date range: %s", target)
 
     try:
+        loaded_rules = load_rules()
         spreadsheet = open_spreadsheet(config.sheet_id)
         layout = detect_log_sheet(spreadsheet, scan_rows=50)
         validate_layout(layout)
-    except (AuthenticationError, SheetAccessError, SheetDetectionError, SheetValidationError) as exc:
+    except (
+        AuthenticationError,
+        SheetAccessError,
+        SheetDetectionError,
+        SheetValidationError,
+    ) as exc:
         raise CriticalSyncError(
             str(exc), platform="google_sheets", mode=mode, target=target, rows_written=0
         ) from exc
+    except Exception as exc:
+        raise CriticalSyncError(
+            f"Failed to load active rules: {exc}",
+            platform="rules",
+            mode=mode,
+            target=target,
+            rows_written=0,
+        ) from exc
+
+    platform_allowed_values: List[str] = []
+    if "platform" in layout.column_map:
+        try:
+            platform_allowed_values = extract_allowed_values_for_column(
+                spreadsheet, layout, layout.column_map["platform"]
+            )
+        except Exception as exc:
+            LOGGER.warning("Unable to extract platform dropdown values: %s", exc)
 
     adapters: Dict[str, Callable[[str, str, date, requests.Session], List[dict]]] = {
         "leetcode": fetch_leetcode,
@@ -116,6 +145,7 @@ def run_sync(
     fetched_total = 0
     duplicates_total = 0
     rows_appended_total = 0
+    skipped_invalid_total: List[dict] = []
 
     for target_date in ordered_dates:
         if mode == "range-backfill":
@@ -129,9 +159,25 @@ def run_sync(
             try:
                 entries = adapter(username, config.timezone, target_date, session)
                 for entry in entries:
-                    fetched_entries.append(
-                        _normalize_submission(entry, platform, username)
+                    normalized = _normalize_submission(entry, platform, username)
+                    mapped_platform, mapping_error = map_platform_value(
+                        canonical_platform=str(normalized.get("platform", "")),
+                        rules=loaded_rules,
+                        allowed_values=platform_allowed_values,
                     )
+                    if mapping_error:
+                        skipped_invalid_total.append(
+                            {
+                                "date": normalized.get("date", ""),
+                                "platform": normalized.get("platform", ""),
+                                "title": normalized.get("title", ""),
+                                "link": normalized.get("link", ""),
+                                "reason": mapping_error,
+                            }
+                        )
+                        continue
+                    normalized["platform"] = mapped_platform or normalized["platform"]
+                    fetched_entries.append(normalized)
             except Exception as exc:
                 LOGGER.warning(
                     "Platform '%s' fetch failed for %s: %s",
@@ -187,8 +233,17 @@ def run_sync(
     LOGGER.info("Summary target: %s", target)
     LOGGER.info("Fetched: %s", fetched_total)
     LOGGER.info("Duplicates skipped: %s", duplicates_total)
+    LOGGER.info("Rows skipped by rule mapping: %s", len(skipped_invalid_total))
     LOGGER.info("New rows appended: %s", rows_appended_total)
     LOGGER.info("Status: %s", status)
+
+    report_path = write_drift_report(
+        mode=mode,
+        target=target,
+        skipped_entries=skipped_invalid_total,
+    )
+    if report_path:
+        LOGGER.warning("Rule drift report written: %s", report_path)
 
     return SyncSummary(
         mode=mode,

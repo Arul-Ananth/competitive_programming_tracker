@@ -37,3 +37,6 @@ Thumbs.db
 service_account.json
 src/service_account.json
 **/service_account.json
+
+# Runtime artifacts
+logs/rule_drift_report.json

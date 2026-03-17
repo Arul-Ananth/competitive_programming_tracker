@@ -1,0 +1,52 @@
+name: Compile Rules
+
+on:
+  workflow_dispatch:
+    inputs:
+      model:
+        description: "LiteLLM model id (for example: openai/gpt-4o-mini)"
+        required: true
+        type: string
+
+jobs:
+  compile-rules:
+    runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Prepare Google credentials
+        env:
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+        run: |
+          set -euo pipefail
+          if [ -z "${GOOGLE_SERVICE_ACCOUNT_JSON:-}" ]; then
+            echo "Missing required secret: GOOGLE_SERVICE_ACCOUNT_JSON" >&2
+            exit 1
+          fi
+          printf '%s' "$GOOGLE_SERVICE_ACCOUNT_JSON" > service_account.json
+
+      - name: Compile draft rules
+        env:
+          GOOGLE_SERVICE_ACCOUNT_FILE: service_account.json
+          LITELLM_MODEL: ${{ github.event.inputs.model }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: python src/main.py --compile-rules
+
+      - name: Upload draft rules artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rules-draft
+          path: rules/rules.draft.json
+
