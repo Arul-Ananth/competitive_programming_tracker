@@ -3,7 +3,7 @@
   "generated_at": "2026-03-16T00:00:00+00:00",
   "source_sheet_id": "",
   "confidence": 0.0,
-  "notes": "Starter rules. Generate fresh rules with --compile-rules and activate with --promote-rules.",
+  "notes": "Draft rules placeholder. Run --compile-rules to generate.",
   "column_map": {},
   "value_maps": {
     "platform": {

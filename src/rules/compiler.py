@@ -82,15 +82,24 @@ def compile_rules_with_llm(context: Dict[str, Any]) -> Dict[str, Any]:
     model = os.getenv("LITELLM_MODEL", "").strip()
     if not model:
         raise RulesError(
-            "Missing LITELLM_MODEL environment variable. Example: openai/gpt-4o-mini."
+            "Missing LITELLM_MODEL environment variable. "
+            "Examples: openai/gpt-4o-mini or ollama/qwen2.5:14b."
         )
 
-    response = completion(
-        model=model,
-        messages=build_compiler_prompt(context),
-        temperature=0.0,
-        response_format={"type": "json_object"},
-    )
+    api_base = os.getenv("LITELLM_API_BASE", "").strip()
+    if not api_base and model.startswith("ollama/"):
+        api_base = "http://localhost:11434"
+
+    request_kwargs = {
+        "model": model,
+        "messages": build_compiler_prompt(context),
+        "temperature": 0.0,
+        "response_format": {"type": "json_object"},
+    }
+    if api_base:
+        request_kwargs["api_base"] = api_base
+
+    response = completion(**request_kwargs)
     content = (
         response["choices"][0]["message"]["content"]
         if isinstance(response, dict)
@@ -115,4 +124,3 @@ def compile_rules_with_llm(context: Dict[str, Any]) -> Dict[str, Any]:
         "normalizers", {"platform_case": "sheet-value", "date_format": "YYYY-MM-DD"}
     )
     return rules
-

@@ -9,6 +9,7 @@ from sheets.introspection import (  # noqa: E402
     _parse_one_of_range,
     _parse_range_formula,
     extract_allowed_values_for_column,
+    inspect_column_validation,
 )
 
 
@@ -60,7 +61,7 @@ class IntrospectionTests(unittest.TestCase):
         metadata = {
             "sheets": [
                 {
-                    "properties": {"sheetId": 1001},
+                    "properties": {"sheetId": 1001, "gridProperties": {"rowCount": 500}},
                     "data": [
                         {
                             "startRow": 0,
@@ -93,7 +94,36 @@ class IntrospectionTests(unittest.TestCase):
         values = extract_allowed_values_for_column(spreadsheet, layout, column_index=2)
         self.assertEqual(values, ["Leetcode", "Atcoder"])
 
+    def test_inspect_column_validation_returns_ranges(self):
+        metadata = {
+            "sheets": [
+                {
+                    "properties": {"sheetId": 1001, "gridProperties": {"rowCount": 500}},
+                    "data": [
+                        {
+                            "startRow": 0,
+                            "rowData": [
+                                {"values": []},
+                                {"values": [{}, {"dataValidation": {"condition": {"type": "ONE_OF_LIST", "values": [{"userEnteredValue": "Leetcode"}]}}}]},
+                                {"values": [{}, {"dataValidation": {"condition": {"type": "ONE_OF_LIST", "values": [{"userEnteredValue": "Leetcode"}]}}}]},
+                                {"values": [{}, {}]},
+                                {"values": [{}, {"dataValidation": {"condition": {"type": "ONE_OF_LIST", "values": [{"userEnteredValue": "Leetcode"}]}}}]},
+                            ],
+                        }
+                    ],
+                }
+            ]
+        }
+        spreadsheet = FakeSpreadsheet(metadata=metadata)
+        layout = FakeLayout(worksheet=FakeWorksheet(id=1001), header_row=1)
+        info = inspect_column_validation(spreadsheet, layout, column_index=2)
+        self.assertEqual(info.allowed_values, ["Leetcode"])
+        self.assertEqual(
+            [(item.start_row, item.end_row) for item in info.validated_ranges],
+            [(2, 3), (5, 5)],
+        )
+        self.assertEqual(info.row_count, 500)
+
 
 if __name__ == "__main__":
     unittest.main()
-

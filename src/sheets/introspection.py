@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from typing import Any, Dict, List, Set
 
 from sheets.detector import SheetLayout
@@ -11,6 +12,34 @@ RANGE_REF_PATTERN = re.compile(
     r"(?P<start_col>[A-Z]+)(?P<start_row>\d+)"
     r"(?::(?P<end_col>[A-Z]+)(?P<end_row>\d+))?$"
 )
+
+
+@dataclass(frozen=True)
+class ValidationRange:
+    start_row: int
+    end_row: int
+
+    def contains(self, row_number: int) -> bool:
+        return self.start_row <= row_number <= self.end_row
+
+
+@dataclass(frozen=True)
+class ColumnValidationInfo:
+    sheet_id: int
+    row_count: int
+    column_index: int
+    allowed_values: List[str]
+    validated_ranges: List[ValidationRange]
+    source_validation: Dict[str, Any] | None
+    source_row: int | None
+
+    def is_row_validated(self, row_number: int) -> bool:
+        return any(item.contains(row_number) for item in self.validated_ranges)
+
+    def last_validated_row(self) -> int:
+        if not self.validated_ranges:
+            return 0
+        return max(item.end_row for item in self.validated_ranges)
 
 
 def _parse_one_of_list(condition: Dict[str, Any]) -> List[str]:
@@ -69,19 +98,43 @@ def _extract_validation_values(validation: Dict[str, Any], spreadsheet) -> List[
     return []
 
 
-def extract_allowed_values_for_column(
-    spreadsheet, layout: SheetLayout, column_index: int, scan_rows: int = 400
-) -> List[str]:
+def _compress_rows_to_ranges(rows: List[int]) -> List[ValidationRange]:
+    if not rows:
+        return []
+
+    sorted_rows = sorted(set(rows))
+    ranges: List[ValidationRange] = []
+    start = sorted_rows[0]
+    prev = sorted_rows[0]
+    for row_number in sorted_rows[1:]:
+        if row_number == prev + 1:
+            prev = row_number
+            continue
+        ranges.append(ValidationRange(start_row=start, end_row=prev))
+        start = row_number
+        prev = row_number
+    ranges.append(ValidationRange(start_row=start, end_row=prev))
+    return ranges
+
+
+def inspect_column_validation(
+    spreadsheet, layout: SheetLayout, column_index: int, scan_rows: int | None = None
+) -> ColumnValidationInfo:
     metadata = spreadsheet.fetch_sheet_metadata(params={"includeGridData": "true"})
     target_sheet_id = int(layout.worksheet.id)
     seen: Set[str] = set()
     values: List[str] = []
+    validated_rows: List[int] = []
+    source_validation: Dict[str, Any] | None = None
+    source_row: int | None = None
+    row_count = 0
 
     for sheet in metadata.get("sheets", []):
         properties = sheet.get("properties", {})
         if int(properties.get("sheetId", -1)) != target_sheet_id:
             continue
 
+        row_count = int(properties.get("gridProperties", {}).get("rowCount", 0))
         for data_block in sheet.get("data", []):
             start_row = int(data_block.get("startRow", 0))
             row_data = data_block.get("rowData", [])
@@ -89,7 +142,7 @@ def extract_allowed_values_for_column(
                 absolute_row = start_row + offset + 1
                 if absolute_row <= layout.header_row:
                     continue
-                if absolute_row > layout.header_row + scan_rows:
+                if scan_rows is not None and absolute_row > layout.header_row + scan_rows:
                     break
 
                 cells = row.get("values", [])
@@ -100,6 +153,11 @@ def extract_allowed_values_for_column(
                 if not validation:
                     continue
 
+                validated_rows.append(absolute_row)
+                if source_validation is None:
+                    source_validation = validation
+                    source_row = absolute_row
+
                 extracted = _extract_validation_values(validation, spreadsheet)
                 for item in extracted:
                     normalized = item.strip().lower()
@@ -108,7 +166,24 @@ def extract_allowed_values_for_column(
                         values.append(item.strip())
         break
 
-    return values
+    return ColumnValidationInfo(
+        sheet_id=target_sheet_id,
+        row_count=row_count,
+        column_index=column_index,
+        allowed_values=values,
+        validated_ranges=_compress_rows_to_ranges(validated_rows),
+        source_validation=source_validation,
+        source_row=source_row,
+    )
+
+
+def extract_allowed_values_for_column(
+    spreadsheet, layout: SheetLayout, column_index: int, scan_rows: int = 400
+) -> List[str]:
+    info = inspect_column_validation(
+        spreadsheet, layout, column_index=column_index, scan_rows=scan_rows
+    )
+    return info.allowed_values
 
 
 def sample_existing_rows(layout: SheetLayout, sample_size: int = 100) -> List[Dict[str, str]]:
@@ -127,4 +202,3 @@ def sample_existing_rows(layout: SheetLayout, sample_size: int = 100) -> List[Di
         if len(sampled) >= sample_size:
             break
     return sampled
-

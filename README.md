@@ -157,6 +157,25 @@ set LITELLM_MODEL=openai/gpt-4o-mini
 python src/main.py --compile-rules
 ```
 
+Compile draft rules with a local Ollama model:
+
+```bash
+set GOOGLE_SERVICE_ACCOUNT_FILE=C:\Dev\competitive_programming_tracker\src\service_account.json
+set LITELLM_MODEL=ollama/qwen2.5:14b
+set LITELLM_API_BASE=http://localhost:11434
+python src/main.py --compile-rules
+```
+
+Recommended local model for a 32 GB laptop:
+
+- `ollama/qwen2.5:14b`
+
+Notes:
+
+- Daily sync does not use the LLM.
+- Ollama is only used for `--compile-rules`.
+- You need the Ollama server running locally before starting rule compilation.
+
 Validate rules file:
 
 ```bash
@@ -195,6 +214,11 @@ Use the optional GitHub Actions workflow `Compile Rules` for manual LLM rule gen
 - Provide `model` input (for example `openai/gpt-4o-mini`).
 - Ensure both `GOOGLE_SERVICE_ACCOUNT_JSON` and a provider API key secret (for example `OPENAI_API_KEY`) are set.
 - Download the `rules-draft` artifact and promote after review.
+
+For local Ollama usage, GitHub Actions is not required. Run `--compile-rules` locally with:
+
+- `LITELLM_MODEL=ollama/qwen2.5:14b`
+- `LITELLM_API_BASE=http://localhost:11434`
 
 ## Project Structure
 

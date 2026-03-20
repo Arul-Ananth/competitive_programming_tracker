@@ -18,8 +18,8 @@ from rules.engine import (
 )
 from sheets.client import AuthenticationError, SheetAccessError, open_spreadsheet
 from sheets.detector import SheetDetectionError, detect_log_sheet
-from sheets.introspection import extract_allowed_values_for_column
 from sheets.validator import SheetValidationError, validate_layout
+from sheets.validation_repair import ensure_validation_coverage, get_next_append_row
 from sheets.writer import SheetWriteError, append_entries, read_existing_keys
 from utils.dates import today_in_timezone
 from utils.fingerprint import build_fallback_key, normalize_link
@@ -124,15 +124,6 @@ def run_sync(
             rows_written=0,
         ) from exc
 
-    platform_allowed_values: List[str] = []
-    if "platform" in layout.column_map:
-        try:
-            platform_allowed_values = extract_allowed_values_for_column(
-                spreadsheet, layout, layout.column_map["platform"]
-            )
-        except Exception as exc:
-            LOGGER.warning("Unable to extract platform dropdown values: %s", exc)
-
     adapters: Dict[str, Callable[[str, str, date, requests.Session], List[dict]]] = {
         "leetcode": fetch_leetcode,
         "codeforces": fetch_codeforces,
@@ -151,6 +142,39 @@ def run_sync(
         if mode == "range-backfill":
             LOGGER.info("Processing date: %s", target_date.isoformat())
 
+        platform_allowed_values: List[str] = []
+        if "platform" in layout.column_map:
+            next_append_row = get_next_append_row(layout)
+            try:
+                repair_result = ensure_validation_coverage(
+                    spreadsheet,
+                    layout,
+                    column_index=layout.column_map["platform"],
+                    next_append_row=next_append_row,
+                )
+                LOGGER.info(
+                    "Platform validation coverage: %s | next append row: %s",
+                    repair_result.coverage_description(),
+                    repair_result.next_append_row,
+                )
+                if repair_result.repaired:
+                    LOGGER.warning(
+                        "Extended platform validation coverage%s.",
+                        (
+                            f" after expanding sheet to {repair_result.expanded_row_count} rows"
+                            if repair_result.expanded_row_count
+                            else ""
+                        ),
+                    )
+                if repair_result.warning:
+                    LOGGER.warning("%s", repair_result.warning)
+                platform_allowed_values = repair_result.info.allowed_values
+            except Exception as exc:
+                LOGGER.warning(
+                    "Unable to inspect or repair platform validation coverage: %s",
+                    exc,
+                )
+
         fetched_entries: List[dict] = []
         for platform, username in usernames.items():
             if not username:
@@ -166,6 +190,11 @@ def run_sync(
                         allowed_values=platform_allowed_values,
                     )
                     if mapping_error:
+                        LOGGER.warning(
+                            "Skipping row due to unmappable platform '%s' for '%s'.",
+                            normalized.get("platform", ""),
+                            normalized.get("title", ""),
+                        )
                         skipped_invalid_total.append(
                             {
                                 "date": normalized.get("date", ""),
