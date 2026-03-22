@@ -1,61 +1,110 @@
 # Competitive Programming Tracker
 
-Automation tool that logs daily solved problems from LeetCode, Codeforces, and AtCoder into Google Sheets.
+Competitive Programming Tracker automatically saves your solved problems from LeetCode, Codeforces, and AtCoder into a Google Sheet.
 
-## Features
+You solve problems. This project checks your accounts and appends only new solves to your sheet every day.
 
-- Runs daily via GitHub Actions (and supports manual run).
-- Supports override modes: single date and date-range backfill.
-- Appends only new rows (never edits or deletes existing rows).
-- Uses deterministic runtime rules from `rules/active_rules.json` for safe column/value mapping.
-- Supports one-time LLM rule compilation with LiteLLM (`--compile-rules`).
-- Prevents duplicates using:
-  - Primary key: `link`
-  - Fallback key: `SHA256(platform + title + date + username)`
-- Auto-detects sheet tab, header row, and column mapping across flexible layouts.
-- Sends failure notification emails for critical errors.
-- One-file user configuration: `config.json`.
+It is built for:
 
-## Repository Model
+- students and aspiring developers
+- people who want a clean coding log
+- users who want automation without setting up a backend or database
 
-This repo is designed for GitHub template usage.
+## What It Does
 
-1. Click **Use this template**.
-2. Edit `config.json`.
-3. Add required GitHub secrets.
-4. Let workflow run daily in your fork.
+- fetches solved problems from supported platforms
+- writes them into your Google Sheet
+- avoids duplicates
+- never deletes rows
+- never edits old rows during normal sync
+- runs automatically with GitHub Actions
+- also supports manual runs for a specific date or date range
 
-Each fork runs independently.
+## Supported Platforms
 
-## Quick Setup
+- LeetCode
+- Codeforces
+- AtCoder
 
-1. Create a Google Cloud service account and enable Google Sheets API.
-2. Share your Google Sheet with the service account email (`Editor`).
-3. Add GitHub repository secrets in your fork.
-4. Edit `config.json`.
-5. Run the workflow manually once from Actions tab to verify setup.
+## How It Works
 
-## GitHub Secrets
+Each run follows this flow:
 
-In your GitHub fork, go to:
+1. Read your settings from `config.json`
+2. Open your Google Sheet
+3. Find the correct worksheet tab and header row
+4. Fetch solved problems from your profiles
+5. Check which rows already exist
+6. Append only new rows
 
-- `Settings` -> `Secrets and variables` -> `Actions` -> `New repository secret`
+The tracker also supports dropdown-aware mapping for sheet columns like `platform`. If your sheet expects values like `Leetcode` or `Atcoder`, the tracker can map its internal values to those exact dropdown choices.
 
-Create these secrets:
+## Important Files
 
-- `GOOGLE_SERVICE_ACCOUNT_JSON` (full service account JSON as a single-line value)
-- `EMAIL_USER`
-- `EMAIL_PASSWORD`
-- Optional: `EMAIL_SMTP_HOST`, `EMAIL_SMTP_PORT`
-- Optional for rule compilation workflow: provider API key secret(s) such as `OPENAI_API_KEY`
+These are the main files most users should know:
 
-Important:
+- [config.json](C:/Dev/competitive_programming_tracker/config.json)
+  - Your personal settings
+  - Most users only need to edit this file
 
-- Secrets do not transfer automatically from a template repository to forks.
+- [README.md](C:/Dev/competitive_programming_tracker/README.md)
+  - This guide
 
-## Configuration
+- [main.py](C:/Dev/competitive_programming_tracker/src/main.py)
+  - The program entry point
+  - This is what you run locally
 
-Edit only `config.json`:
+- [sync.py](C:/Dev/competitive_programming_tracker/src/sync.py)
+  - The main sync workflow
+
+- `src/platforms/`
+  - Code that fetches solves from each platform
+
+- `src/sheets/`
+  - Code that reads and writes Google Sheets
+
+- [active_rules.json](C:/Dev/competitive_programming_tracker/rules/active_rules.json)
+  - The active mapping rules used during normal runs
+
+- [daily-sync.yml](C:/Dev/competitive_programming_tracker/.github/workflows/daily-sync.yml)
+  - The GitHub Actions workflow that runs daily
+
+## Project Structure
+
+```text
+cp-tracker/
+  config.json
+  requirements.txt
+  rules/
+  src/
+  .github/workflows/
+  README.md
+```
+
+## What You Need Before Starting
+
+You need:
+
+1. a Google Sheet
+2. a Google Cloud service account with Google Sheets API access
+3. your LeetCode / Codeforces / AtCoder usernames
+4. Python installed if you want to test locally
+5. a GitHub repository if you want daily automation
+
+## Quick Start
+
+Setup is:
+
+1. fill `config.json`
+2. connect Google credentials
+3. test locally once
+4. enable GitHub Actions
+
+## Step 1: Fill `config.json`
+
+Open [config.json](C:/Dev/competitive_programming_tracker/config.json) and update it with your details.
+
+Example:
 
 ```json
 {
@@ -68,23 +117,36 @@ Edit only `config.json`:
 }
 ```
 
-`sheet_id` is automatically extracted from `sheet_url`.
+What each field means:
 
-## Sheet Layout Rules
+- `sheet_url`
+  - the full Google Sheet link
+- `leetcode`
+  - your LeetCode username
+- `codeforces`
+  - your Codeforces username
+- `atcoder`
+  - your AtCoder username
+- `timezone`
+  - used to decide what "today" means
+- `notification_email`
+  - optional email for failure alerts
 
-The tracker scans the first 50 rows of every tab and auto-detects the first valid header row.
+## Step 2: Prepare Your Google Sheet
 
-Required logical columns:
+Your sheet needs a log table where the tracker can add rows.
+
+Required columns:
 
 - `title`
 - `link`
 
-Recommended logical columns:
+Recommended columns:
 
 - `date`
 - `platform`
 
-Optional logical columns:
+Optional columns:
 
 - `difficulty`
 - `contest`
@@ -92,36 +154,109 @@ Optional logical columns:
 - `tags`
 - `notes`
 
-Supported aliases:
+The tracker can detect common header names automatically.
 
-- `title`: `Title`, `Problem`, `Question`, `Program Title`
-- `link`: `Link`, `URL`, `Problem Link`
-- `date`: `Date`, `Solved On`
-- `platform`: `Platform`, `Site`, `OJ`
-- `difficulty`: `Difficulty`, `Level`
+Examples:
 
-## Run Flow
+- `Title`, `Problem`, `Question`, `Program Title`
+- `Link`, `URL`, `Problem Link`
+- `Platform`, `Site`, `OJ`
 
-Each run follows:
+Important:
 
-1. Load configuration
-2. Validate sheet structure
-3. Resolve run mode and target date(s)
-4. Fetch submissions for each target date
-5. Normalize data
-6. Map values using `rules/active_rules.json`
-7. Validate mapped platform values against sheet dropdown options
-8. Generate duplicate keys
-9. Read existing keys
-10. Filter duplicates
-11. Append new rows
-12. Print summary
+- your header row should appear within the first 50 rows of the sheet tab
+- the tracker scans tabs automatically and picks the first valid log table
 
-For range backfill, dates are processed in chronological order, one date at a time.
+## Step 3: Add Google Credentials
 
-## Logging Output
+The tracker needs Google service account credentials.
 
-Example:
+### Local Run
+
+If you have a local JSON file such as `src/service_account.json`, set this in PowerShell:
+
+```powershell
+$env:GOOGLE_SERVICE_ACCOUNT_FILE="C:\Dev\competitive_programming_tracker\src\service_account.json"
+```
+
+### GitHub Actions
+
+In your GitHub repository:
+
+1. open `Settings`
+2. open `Secrets and variables`
+3. open `Actions`
+4. click `New repository secret`
+
+Create this secret:
+
+- `GOOGLE_SERVICE_ACCOUNT_JSON`
+
+Paste the full JSON content as the secret value.
+
+Important:
+
+- do not commit your service account JSON file
+- secrets do not transfer automatically to forks
+
+## Step 4: Install Dependencies
+
+From the project root:
+
+```powershell
+pip install -r requirements.txt
+```
+
+If you use the local virtual environment:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+```
+
+## Step 5: Run It Locally
+
+From the project root:
+
+```powershell
+cd C:\Dev\competitive_programming_tracker
+$env:GOOGLE_SERVICE_ACCOUNT_FILE="C:\Dev\competitive_programming_tracker\src\service_account.json"
+python src\main.py
+```
+
+This runs the tracker in daily mode using today's date in your configured timezone.
+
+### Run For One Specific Date
+
+```powershell
+python src\main.py --date 2026-03-15
+```
+
+### Run For A Date Range
+
+```powershell
+python src\main.py --from 2026-03-01 --to 2026-03-07
+```
+
+Use date range mode if you want to backfill older solves.
+
+## Valid Date Arguments
+
+These are valid:
+
+- no date arguments
+- `--date YYYY-MM-DD`
+- `--from YYYY-MM-DD --to YYYY-MM-DD`
+
+These are not valid:
+
+- `--date` with `--from`
+- `--date` with `--to`
+- `--from` without `--to`
+- `--to` without `--from`
+
+## What The Logs Mean
+
+At the end of a run, you will see something like:
 
 ```text
 Run date: 2026-03-15
@@ -131,125 +266,208 @@ New rows appended: 2
 Status: SUCCESS
 ```
 
-## Local Run
+Meaning:
 
-```bash
-pip install -r requirements.txt
-python src/main.py
+- `Fetched`: how many solves were found
+- `Duplicates skipped`: how many already existed
+- `New rows appended`: how many rows were added
+- `Status`: overall result
+
+## How Duplicate Prevention Works
+
+The tracker is safe to re-run.
+
+It first tries to detect duplicates using:
+
+- `link`
+
+If needed, it falls back to a fingerprint made from:
+
+- platform
+- title
+- date
+- username
+
+This means re-running the same date should not create duplicate rows.
+
+## GitHub Actions: Automatic Daily Runs
+
+Main workflow:
+
+- [daily-sync.yml](C:/Dev/competitive_programming_tracker/.github/workflows/daily-sync.yml)
+
+This workflow:
+
+- runs every day on a schedule
+- can also be started manually
+
+### How To Run Manually On GitHub
+
+1. open your repository
+2. go to `Actions`
+3. choose `CP Tracker`
+4. click `Run workflow`
+
+You can use:
+
+- Daily mode
+  - leave inputs empty
+- Single date mode
+  - fill `date`
+- Range mode
+  - fill `from_date` and `to_date`
+
+Examples:
+
+- `date = 2026-03-15`
+- `from_date = 2026-03-01`
+- `to_date = 2026-03-07`
+
+## Optional Email Notifications
+
+If a critical failure happens, the tracker can send an email.
+
+GitHub secrets:
+
+- `EMAIL_USER`
+- `EMAIL_PASSWORD`
+
+Optional:
+
+- `EMAIL_SMTP_HOST`
+- `EMAIL_SMTP_PORT`
+
+If you do not add email secrets, the tracker still works. It just cannot send failure alerts.
+
+## Optional AI Rule Compilation
+
+This project also supports optional AI-assisted rule compilation.
+
+This is useful if:
+
+- your sheet has custom dropdown values
+- your headers are unusual
+- you want help generating mapping rules
+
+Important:
+
+- normal daily sync does not use AI
+- AI is only used when you explicitly run rule compilation
+
+Rule files:
+
+- [active_rules.json](C:/Dev/competitive_programming_tracker/rules/active_rules.json)
+  - active rules used during normal sync
+- [rules.draft.json](C:/Dev/competitive_programming_tracker/rules/rules.draft.json)
+  - draft rules created during compilation
+- [rules.schema.json](C:/Dev/competitive_programming_tracker/rules/rules.schema.json)
+  - validation schema for rules
+
+### Compile Rules
+
+```powershell
+python src\main.py --compile-rules
 ```
 
-Single date override:
+### Validate Rules
 
-```bash
-python src/main.py --date 2026-03-15
+```powershell
+python src\main.py --validate-rules
 ```
 
-Range backfill:
+### Promote Draft Rules
 
-```bash
-python src/main.py --from 2026-03-01 --to 2026-03-07
+```powershell
+python src\main.py --promote-rules
 ```
 
-Compile draft rules (one-time/manual):
+If you do not have an API key or local model, that is fine. Normal sync still works.
 
-```bash
-set LITELLM_MODEL=openai/gpt-4o-mini
-python src/main.py --compile-rules
-```
+## Optional: Local Ollama For Rule Compilation
 
-Compile draft rules with a local Ollama model:
+If you want to use Ollama for rule compilation:
 
-```bash
-set GOOGLE_SERVICE_ACCOUNT_FILE=C:\Dev\competitive_programming_tracker\src\service_account.json
-set LITELLM_MODEL=ollama/qwen2.5:14b
-set LITELLM_API_BASE=http://localhost:11434
-python src/main.py --compile-rules
+```powershell
+$env:GOOGLE_SERVICE_ACCOUNT_FILE="C:\Dev\competitive_programming_tracker\src\service_account.json"
+$env:LITELLM_MODEL="ollama/qwen2.5:14b"
+$env:LITELLM_API_BASE="http://localhost:11434"
+python src\main.py --compile-rules
 ```
 
 Recommended local model for a 32 GB laptop:
 
 - `ollama/qwen2.5:14b`
 
-Notes:
+This is only for manual rule compilation. Daily sync still does not use AI.
 
-- Daily sync does not use the LLM.
-- Ollama is only used for `--compile-rules`.
-- You need the Ollama server running locally before starting rule compilation.
+## Safety Behavior
 
-Validate rules file:
+If the tracker cannot safely map a value, for example a platform dropdown label:
 
-```bash
-python src/main.py --validate-rules
+- it skips that row
+- it prints a warning
+- it writes details to `logs/rule_drift_report.json`
+
+This is intentional. It prevents incorrect data from being written into your sheet.
+
+## What The Tracker Does Not Do
+
+To keep your data safe, normal sync does not:
+
+- delete rows
+- edit historical rows
+- overwrite old entries
+- guess risky values silently
+
+## Troubleshooting
+
+### Missing Google credentials
+
+The tracker could not find:
+
+- `GOOGLE_SERVICE_ACCOUNT_FILE`
+or
+- `GOOGLE_SERVICE_ACCOUNT_JSON`
+
+For local PowerShell runs, set:
+
+```powershell
+$env:GOOGLE_SERVICE_ACCOUNT_FILE="C:\Dev\competitive_programming_tracker\src\service_account.json"
 ```
 
-Promote draft to active:
+### No valid log sheet detected
 
-```bash
-python src/main.py --promote-rules
-```
+Usually this means:
 
-If runtime mapping fails for any row, that row is skipped and details are written to `logs/rule_drift_report.json`.
+- the log table was not found in the first 50 rows
+- required columns like `title` and `link` are missing
+- the headers are too different from supported aliases
 
-## GitHub Actions Manual Run
+### Dropdown is not selected in new rows
 
-Scheduled runs continue to use the current day in your configured timezone.
+Usually this means:
 
-Manual dispatch options:
+- the platform text did not match a dropdown value
+- the dropdown validation range did not cover the new rows
 
-- Daily mode: leave all inputs empty.
-- Single date mode: set `date=2026-03-15`.
-- Range mode: set `from_date=2026-03-01` and `to_date=2026-03-07`.
+The tracker tries to repair the platform dropdown range automatically and warns if it cannot.
 
-Validation rules:
+## Recommended First Test
 
-- Do not combine `date` with `from_date` or `to_date`.
-- `from_date` and `to_date` must be provided together.
-- Dates must be `YYYY-MM-DD`.
+If this is your first setup, use this order:
 
-## Rule Compilation Workflow
+1. fill `config.json`
+2. set Google credentials locally
+3. run `python src\main.py --date 2026-03-15`
+4. check the sheet
+5. re-run the same date
+6. confirm duplicates are skipped
+7. enable GitHub Actions after local success
 
-Use the optional GitHub Actions workflow `Compile Rules` for manual LLM rule generation.
+## Short Summary
 
-- Trigger `Compile Rules` from Actions tab.
-- Provide `model` input (for example `openai/gpt-4o-mini`).
-- Ensure both `GOOGLE_SERVICE_ACCOUNT_JSON` and a provider API key secret (for example `OPENAI_API_KEY`) are set.
-- Download the `rules-draft` artifact and promote after review.
+If you remember only three things:
 
-For local Ollama usage, GitHub Actions is not required. Run `--compile-rules` locally with:
-
-- `LITELLM_MODEL=ollama/qwen2.5:14b`
-- `LITELLM_API_BASE=http://localhost:11434`
-
-## Project Structure
-
-```text
-cp-tracker/
-  config.json
-  requirements.txt
-  rules/
-    active_rules.json
-    rules.draft.json
-    rules.schema.json
-  src/
-    main.py
-    sync.py
-    config_loader.py
-    platforms/
-      leetcode.py
-      codeforces.py
-      atcoder.py
-    sheets/
-      client.py
-      detector.py
-      validator.py
-      writer.py
-    utils/
-      fingerprint.py
-      dates.py
-      logging_utils.py
-      notification.py
-  .github/workflows/
-    daily-sync.yml
-    compile-rules.yml
-  README.md
-```
+1. edit [config.json](C:/Dev/competitive_programming_tracker/config.json)
+2. provide Google credentials
+3. run [main.py](C:/Dev/competitive_programming_tracker/src/main.py) locally once before depending on GitHub Actions
