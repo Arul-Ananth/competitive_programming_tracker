@@ -18,9 +18,14 @@ from rules.engine import (
 )
 from sheets.client import AuthenticationError, SheetAccessError, open_spreadsheet
 from sheets.detector import SheetDetectionError, detect_log_sheet
+from sheets.introspection import ColumnValidationInfo
 from sheets.validator import SheetValidationError, validate_layout
 from sheets.validation_repair import ensure_validation_coverage, get_next_append_row
-from sheets.writer import SheetWriteError, append_entries, read_existing_keys
+from sheets.writer import (
+    SheetWriteError,
+    append_entries,
+    read_existing_keys_from_rows,
+)
 from utils.dates import today_in_timezone
 from utils.fingerprint import build_fallback_key, normalize_link
 
@@ -137,43 +142,74 @@ def run_sync(
     duplicates_total = 0
     rows_appended_total = 0
     skipped_invalid_total: List[dict] = []
+    platform_allowed_values: List[str] = []
+    platform_validation_info: ColumnValidationInfo | None = None
+
+    try:
+        sheet_rows = layout.worksheet.get_all_values()
+        existing_keys = read_existing_keys_from_rows(layout, usernames, sheet_rows)
+    except Exception as exc:
+        raise CriticalSyncError(
+            f"Failed to read existing rows from sheet: {exc}",
+            platform="google_sheets",
+            mode=mode,
+            target=target,
+            rows_written=0,
+        ) from exc
+
+    next_append_row = get_next_append_row(layout, rows=sheet_rows)
+
+    def refresh_platform_validation() -> None:
+        nonlocal platform_allowed_values, platform_validation_info, next_append_row
+        if "platform" not in layout.column_map:
+            platform_allowed_values = []
+            platform_validation_info = None
+            return
+
+        try:
+            repair_result = ensure_validation_coverage(
+                spreadsheet,
+                layout,
+                column_index=layout.column_map["platform"],
+                next_append_row=next_append_row,
+            )
+            LOGGER.info(
+                "Platform validation coverage: %s | next append row: %s",
+                repair_result.coverage_description(),
+                repair_result.next_append_row,
+            )
+            if repair_result.repaired:
+                LOGGER.warning(
+                    "Extended platform validation coverage%s.",
+                    (
+                        f" after expanding sheet to {repair_result.expanded_row_count} rows"
+                        if repair_result.expanded_row_count
+                        else ""
+                    ),
+                )
+            if repair_result.warning:
+                LOGGER.warning("%s", repair_result.warning)
+            platform_allowed_values = repair_result.info.allowed_values
+            platform_validation_info = repair_result.info
+        except Exception as exc:
+            LOGGER.warning(
+                "Unable to inspect or repair platform validation coverage: %s",
+                exc,
+            )
+            platform_allowed_values = []
+            platform_validation_info = None
+
+    refresh_platform_validation()
 
     for target_date in ordered_dates:
         if mode == "range-backfill":
             LOGGER.info("Processing date: %s", target_date.isoformat())
 
-        platform_allowed_values: List[str] = []
-        if "platform" in layout.column_map:
-            next_append_row = get_next_append_row(layout)
-            try:
-                repair_result = ensure_validation_coverage(
-                    spreadsheet,
-                    layout,
-                    column_index=layout.column_map["platform"],
-                    next_append_row=next_append_row,
-                )
-                LOGGER.info(
-                    "Platform validation coverage: %s | next append row: %s",
-                    repair_result.coverage_description(),
-                    repair_result.next_append_row,
-                )
-                if repair_result.repaired:
-                    LOGGER.warning(
-                        "Extended platform validation coverage%s.",
-                        (
-                            f" after expanding sheet to {repair_result.expanded_row_count} rows"
-                            if repair_result.expanded_row_count
-                            else ""
-                        ),
-                    )
-                if repair_result.warning:
-                    LOGGER.warning("%s", repair_result.warning)
-                platform_allowed_values = repair_result.info.allowed_values
-            except Exception as exc:
-                LOGGER.warning(
-                    "Unable to inspect or repair platform validation coverage: %s",
-                    exc,
-                )
+        if (
+            platform_validation_info is not None
+            and not platform_validation_info.is_row_validated(next_append_row)
+        ):
+            refresh_platform_validation()
 
         fetched_entries: List[dict] = []
         for platform, username in usernames.items():
@@ -221,17 +257,6 @@ def run_sync(
             {"entry": entry, "key": _submission_key(entry)} for entry in fetched_entries
         ]
 
-        try:
-            existing_keys = read_existing_keys(layout, usernames)
-        except Exception as exc:
-            raise CriticalSyncError(
-                f"Failed to read existing rows from sheet: {exc}",
-                platform="google_sheets",
-                mode=mode,
-                target=target,
-                rows_written=rows_appended_total,
-            ) from exc
-
         unique_entries: List[dict] = []
         seen_new_keys = set()
         for item in keyed_entries:
@@ -244,7 +269,8 @@ def run_sync(
             unique_entries.append(entry)
 
         try:
-            rows_appended_total += append_entries(layout, unique_entries)
+            appended_count = append_entries(layout, unique_entries)
+            rows_appended_total += appended_count
         except SheetWriteError as exc:
             raise CriticalSyncError(
                 str(exc),
@@ -253,6 +279,10 @@ def run_sync(
                 target=target,
                 rows_written=rows_appended_total,
             ) from exc
+
+        for item in unique_entries:
+            existing_keys.add(_submission_key(item))
+        next_append_row += appended_count
 
     status = "SUCCESS" if not all_platform_failures else "SUCCESS_WITH_WARNINGS"
     if all_platform_failures:

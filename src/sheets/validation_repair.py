@@ -22,8 +22,9 @@ class ValidationRepairResult:
         )
 
 
-def get_next_append_row(layout: SheetLayout) -> int:
-    rows = layout.worksheet.get_all_values()
+def get_next_append_row(layout: SheetLayout, rows: list[list[str]] | None = None) -> int:
+    if rows is None:
+        rows = layout.worksheet.get_all_values()
     return max(len(rows) + 1, layout.header_row + 1)
 
 
@@ -122,4 +123,3 @@ def ensure_validation_coverage(
         warning=warning,
         expanded_row_count=expanded_row_count,
     )
-

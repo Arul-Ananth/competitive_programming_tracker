@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Dict, Iterable, List, Set
+from typing import Dict, Iterable, List, Sequence, Set
 
 from sheets.detector import SheetLayout
 from utils.fingerprint import build_fallback_key, normalize_link
@@ -28,11 +28,12 @@ def _safe_cell(row: list[str], column_index: int) -> str:
     return str(row[idx]).strip()
 
 
-def read_existing_keys(
-    layout: SheetLayout, platform_usernames: Dict[str, str]
+def read_existing_keys_from_rows(
+    layout: SheetLayout,
+    platform_usernames: Dict[str, str],
+    rows: Sequence[Sequence[str]],
 ) -> Set[str]:
     existing_keys: Set[str] = set()
-    rows = layout.worksheet.get_all_values()
     link_col = layout.column_map.get("link")
     platform_col = layout.column_map.get("platform")
     title_col = layout.column_map.get("title")
@@ -60,6 +61,13 @@ def read_existing_keys(
                 )
 
     return existing_keys
+
+
+def read_existing_keys(
+    layout: SheetLayout, platform_usernames: Dict[str, str]
+) -> Set[str]:
+    rows = layout.worksheet.get_all_values()
+    return read_existing_keys_from_rows(layout, platform_usernames, rows)
 
 
 def _entry_value(entry: dict, column_name: str) -> str:
