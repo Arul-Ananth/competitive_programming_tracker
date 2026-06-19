@@ -120,16 +120,6 @@ def build_default_rules(sheet_id: str = "") -> Dict[str, Any]:
     }
 
 
-def ensure_active_rules_exists(sheet_id: str = "") -> Path:
-    if ACTIVE_RULES_PATH.exists():
-        return ACTIVE_RULES_PATH
-    ACTIVE_RULES_PATH.parent.mkdir(parents=True, exist_ok=True)
-    ACTIVE_RULES_PATH.write_text(
-        json.dumps(build_default_rules(sheet_id=sheet_id), indent=2), encoding="utf-8"
-    )
-    return ACTIVE_RULES_PATH
-
-
 def _ci_match(value: str, choices: Iterable[str]) -> str | None:
     target = value.strip().lower()
     for choice in choices:
@@ -193,4 +183,3 @@ def write_drift_report(
     }
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     return path
-

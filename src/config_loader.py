@@ -63,8 +63,6 @@ def load_config(path: str = "config.json") -> Config:
         raise ConfigError("Missing required field: sheet_url")
     if not timezone_name:
         raise ConfigError("Missing required field: timezone")
-    if not notification_email:
-        raise ConfigError("Missing required field: notification_email")
 
     _validate_timezone(timezone_name)
     sheet_id = _extract_sheet_id(sheet_url)
@@ -87,4 +85,3 @@ def load_config(path: str = "config.json") -> Config:
         codeforces=codeforces,
         atcoder=atcoder,
     )
-

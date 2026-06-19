@@ -1,4 +1,6 @@
 import gspread
+import os
+from pathlib import Path
 from google.oauth2.service_account import Credentials
 
 SCOPES = [
@@ -6,7 +8,10 @@ SCOPES = [
     "https://www.googleapis.com/auth/drive"
 ]
 
-SERVICE_ACCOUNT_FILE = "service_account.json"
+SERVICE_ACCOUNT_FILE = os.getenv(
+    "GOOGLE_SERVICE_ACCOUNT_FILE",
+    str(Path(__file__).with_name("service_account.json")),
+)
 SPREADSHEET_ID = "1qnf-7IHyfwucyRblk-weOv6h2pET0IkLmdnfPssyVUQ"
 
 creds = Credentials.from_service_account_file(

@@ -63,13 +63,6 @@ def read_existing_keys_from_rows(
     return existing_keys
 
 
-def read_existing_keys(
-    layout: SheetLayout, platform_usernames: Dict[str, str]
-) -> Set[str]:
-    rows = layout.worksheet.get_all_values()
-    return read_existing_keys_from_rows(layout, platform_usernames, rows)
-
-
 def _entry_value(entry: dict, column_name: str) -> str:
     value = entry.get(column_name, "")
     if value is None:
